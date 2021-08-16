@@ -1,0 +1,166 @@
+---
+title: "Exponential Smoothing forecast"
+output: 
+  html_notebook:
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 4
+    number_sections: true
+    code_folding: "hide"
+    theme: "cosmo"
+    highlight: "monochrome"
+---
+
+```{r setup}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+#install.packages("devtools")
+library(devtools)
+library(tidyverse)
+library(summarytools)
+library(xtable)
+library(knitr)
+library(ExPanDaR)
+library(plotly)
+library(REAT)
+library(ggpubr)
+library(DT)
+library(ggrepel)
+library(forecast)
+
+# Change the presentation of decimal numbers to 4 and avoid scientific notation
+library(readxl)
+options(prompt="R> ", digits=7, scipen=999)
+```
+
+
+# loading crime data
+
+```{r}
+library(readr)
+long_master_nona <- read_csv("01-raw-data/noNA_long_all_data_master_health_violence_services_education.csv", locale = locale(encoding = "ISO-8859-1"),    col_types = cols(NDVr = col_double(), 
+       eb_ndvr = col_double(), eb_npir = col_double(), 
+       nimr = col_double(), Litr= col_double(), 
+        nmrpr = col_double(), nmpr = col_double() ))
+
+wide_master_nona <- read_csv("01-raw-data/noNA_wide_data_master_health_violence_services_education.csv", locale = locale(encoding = "ISO-8859-1"))
+```
+
+#creating and ID 1:1120 for each municipality time series
+
+```{r}
+nmr<- long_master_nona %>% 
+  filter(year>=2003) %>% 
+  select(2:3,year, starts_with("eb_nmr")) %>% 
+  arrange(code) %>% 
+  mutate(code=as.character(code))
+#nmr %>% 
+a<- nmr %>% 
+  filter(year==2010) %>% 
+  select(code) %>% 
+  mutate(ID=1:nrow(.))
+a
+nmr<- left_join(nmr,a,by="code")
+nmr
+#nmr %>% group_by(ID) %>% summarise(n=n_distinct(municipality))
+```
+
+```{r}
+target<- 10000-(23.23/10)
+target
+
+```
+
+
+```{r}
+graph2 <- prepare_quantile_trend_graph(nmr, ts_id = "year", quantiles = c(0.20, 0.25, 0.5, 0.75, 0.95), var = "eb_nmr")
+graph2$df
+
+graph2$plot
+
+
+a<-ggplot(graph2$df) + geom_line(aes(x=year, y=eb_nmr, colour=quantile),size = 1.5) +
+  scale_colour_manual(values=c("red","purple", "blue", "black", "gray"))+
+  labs(y="Emprical Bayes non-murder rate \nper 10.000 people", x="year")+
+  theme(text=element_text( family="Palatino"))+
+    theme_minimal() +
+  scale_color_discrete("Quantile:", labels = c("0.20", "0.25", "0.50", "0.75","0.95"))+
+  theme(text=element_text( family="Palatino"),axis.title=element_text(size=14), legend.text = element_text(size=14), legend.title = element_text(size=14),legend.position = "right")
+ggsave("02-figures/_ebnmrtrend.PNG")
+
+a
+
+
+# 1. Open pdf file for saving
+pdf("02-figures/_ebnmrtrend.pdf", width = 6, height = 4)
+# 2. Create the plot
+a
+# 3. Close the file
+dev.off()
+
+```
+
+
+# trend graph 
+
+
+
+```{r}
+graph2 <- prepare_trend_graph(nmr, ts_id = "year", var = "eb_nmr")
+graph2$df
+
+graph2$plot
+
+b<-ggplot(graph2$df,aes(x=year, y=mean)) + geom_line(size = 1, color= "black",linetype = "dashed") +
+  labs(y="Emprical Bayes non-murder rate \nper 10.000 people", x="year")+
+  theme(text=element_text( family="Palatino"))+
+    theme_minimal() +
+  geom_hline(yintercept = target)+
+  scale_y_continuous(limits= c(9994,9999))+
+   geom_label(aes(x = 2008, y = 9998, label="2022 SDG National \n Development target"),
+nudge_y = 0.5,nudge_x = 0,size=4.5 ,family="Palatino")+
+  geom_label(aes(x = 2013, y = 9995.7, label="mean of municipal \n crime rate" ,label.size = 1.25), size=4.5,family="Palatino",
+nudge_y = -0.2,nudge_x = 0 )+
+   annotate(
+    geom = "curve", x = 2010, y = 9995.5, xend = 2008, yend = 9996.2, 
+    curvature = -0.3, arrow = arrow(length = unit(2, "mm"))
+  ) +
+  annotate(
+    geom = "curve", x = 2011.2, y = 9998.5, xend = 2013, yend = target+0.1, 
+    curvature = -0.3, arrow = arrow(length = unit(2, "mm"))
+  ) +
+  theme(text=element_text( family="Palatino"),axis.title=element_text(size=14, family="Palatino"), legend.text = element_text(size=14,family="Palatino"), legend.title = element_text(size=14,family="Palatino"))
+ggsave("02-figures/_ebnmrtrend2.PNG")
+
+b
+
+pdf("02-figures/_ebnmrtrend2.pdf", width = 6, height = 4)
+# 2. Create the plot
+b
+# 3. Close the file
+dev.off()
+```
+
+```{r}
+a
+b
+library(cowplot)
+plot_grid(a,b)
+
+pdf("02-figures/ebnmrtrend3.pdf", width = 12, height = 6)
+# 2. Create the plot
+plot_grid(a,b)
+# 3. Close the file
+dev.off()
+```
+
+
+
+```{r dodge-st, fig.show = "hold", out.width = "50%"}
+a 
+
+b 
+```
+
+

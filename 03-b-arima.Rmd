@@ -1,0 +1,373 @@
+---
+title: "arima forecast"
+output: 
+  html_notebook:
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 4
+    number_sections: true
+    code_folding: "hide"
+    theme: "cosmo"
+    highlight: "monochrome"
+---
+
+```{r setup}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+#install.packages("devtools")
+library(devtools)
+library(tidyverse)
+library(summarytools)
+library(xtable)
+library(knitr)
+library(ExPanDaR)
+library(plotly)
+library(REAT)
+library(ggpubr)
+library(DT)
+library(ggrepel)
+library(forecast)
+
+# Change the presentation of decimal numbers to 4 and avoid scientific notation
+library(readxl)
+options(prompt="R> ", digits=7, scipen=999)
+```
+
+# loading data
+
+```{r}
+library(readr)
+long_master_nona <- read_csv("01-raw-data/noNA_long_all_data_master_health_violence_services_education.csv", locale = locale(encoding = "ISO-8859-1"),    col_types = cols(NDVr = col_double(), 
+       eb_ndvr = col_double(), eb_npir = col_double(), 
+       nimr = col_double(), Litr= col_double(), 
+        nmrpr = col_double(), nmpr = col_double() ))
+
+wide_master_nona <- read_csv("01-raw-data/noNA_wide_data_master_health_violence_services_education.csv", locale = locale(encoding = "ISO-8859-1"))
+
+
+cv<- read_csv(  "03-data/code04_timeseries_cv.csv")
+cv<-cv[,-1]
+
+cvy<- read_csv(  "03-data/code04_timeseries_cv_yearly.csv")
+cvy<-cvy[,-1]
+```
+
+```{r}
+cvy
+```
+
+# creating an ID 1:1120 for each municipality
+
+```{r}
+nmr<- long_master_nona %>% 
+  filter(year>=2003) %>% 
+  select(2:3,year, starts_with("eb_nmr")) %>% 
+  arrange(code) %>% 
+  mutate(code=as.character(code))
+#nmr %>% 
+a<- nmr %>% 
+  filter(year==2010) %>% 
+  select(code) %>% 
+  mutate(ID=1:nrow(.))
+a
+nmr<- left_join(nmr,a,by="code")
+nmr
+```
+
+# creaing a list of time series
+
+```{r}
+ts_list=list()
+id=c(1:1120)
+
+for (x in seq_along(id)) {
+  try <- nmr %>% 
+  filter(ID==id[x])
+  
+  ts_list[[x]] <- ts(try$eb_nmr, start=2003)
+}
+
+```
+
+# plotting the forecast for 2020 for one municipality
+
+```{r}
+
+id=1
+
+autoplot(ts_list[[id]])
+
+ auto.arima(ts_list[[id]]) %>% 
+forecast(h=4) %>% 
+    autoplot()
+  
+ggAcf(ts_list[[id]])
+
+Box.test(ts_list[[id]], lag = 5, type = "Ljung")
+
+```
+
+    
+# Estimating an arima model for the series of each municipality 
+and predicting crime for 2022
+    
+    
+```{r}
+nmr2022=c()
+
+for (x in 1:1120) {
+  fit <- auto.arima(ts_list[[x]])
+#summary(fit)
+ foreca <-fit %>% forecast(h=4)
+nmr2022[x]= data.frame(foreca)[4,1]
+ }
+
+```
+    
+    
+According to this rough prediction how many municipalities will reach the 2022 target?
+    
+```{r}
+nmr2018<- nmr %>% filter(year==2018)
+
+nmr2018$pred2022 <- nmr2022
+nmr2018
+
+target<- 10000-(23.23/10)
+target
+
+
+nmr2018 %>% 
+  filter(eb_nmr<target)
+
+nmr2018 %>% 
+  filter(pred2022<target)
+
+nmr2018 %>% arrange(desc(pred2022))
+
+```
+
+
+# comparing arima and exponential smoothing models
+
+
+```{r}
+
+# Set up forecast functions for ETS and ARIMA models
+fets <- function(x, h) {
+  forecast(ets(x), h = h)
+}
+farima <- function(x, h) {
+  forecast(auto.arima(x), h=h )
+}
+```
+
+# runnning this may take a few minutes
+
+```{r}
+
+MSE_ets=c()
+MSE_arima=c()
+for (xx in 1:1120) {
+# Compute CV errors for ETS on each time series as e1
+e1 <- tsCV(ts_list[[xx]], fets, h=1)
+
+# Compute CV errors for ARIMA on each time series as e2
+e2 <- tsCV(ts_list[[xx]], farima,h=1)
+
+# Find MSE of each model class
+MSE_ets[xx] <-  mean(e1^2, na.rm=TRUE)
+MSE_arima[xx] <- mean(e2^2,  na.rm=TRUE)
+}
+```
+
+
+It appears that arima is the model that has the best forecasting power for most municipalities
+
+
+```{r}
+length(MSE_arima)
+length(MSE_ets)
+MSE<-data.frame(MSE_arima, MSE_ets) %>% 
+  mutate(arima_best= ifelse(MSE_arima<MSE_ets,1,0 )) %>% 
+  mutate(equal=ifelse(round(MSE_arima,4)==round( MSE_ets,4),1,0))
+
+         
+MSE %>%          
+group_by(arima_best) %>% 
+  summarise(n=n())
+
+MSE %>%          
+group_by(equal) %>% 
+  summarise(n=n())
+
+MSE
+
+```
+
+
+# creating an arima prediction for 2018 with data up to 2014
+
+```{r}
+fc_arima2018=c()
+
+for (x in 1:1120) {
+  fit <- auto.arima(window(ts_list[[x]], end=2014))
+#summary(fit)
+ foreca <-fit %>% forecast(h=4)
+fc_arima2018[x]= data.frame(foreca)[4,1]
+ }
+```
+
+
+
+```{r}
+nmr_2018_arima <- nmr %>% 
+  filter(year==2018)
+
+nmr_2018_arima$fc_arima2018 <- fc_arima2018
+
+nmr_2018_arima <- nmr_2018_arima  %>%
+  mutate(forecast_error=eb_nmr - fc_arima2018)
+```
+
+
+```{r}
+nmr_2018_arima %>%  arrange(forecast_error)
+mean((nmr_2018_arima$forecast_error)^2)
+```
+
+
+
+#  time series cross validation (h=4)
+
+Running this chunk may take a few minutes.
+
+```{r}
+e_arima=list()
+for (jj in 1:1120) {
+  e<- tsCV(ts_list[[jj]], initial = 4,  farima,h=4)
+e_arima[[jj]]<- e[,4]
+}
+
+```
+
+
+
+# new table
+
+
+```{r}
+new_arima=list()
+for (i in 1:1120) {
+  new_arima[[i]]=abs(e_arima[[i]])
+}
+
+for (xx in 1:1119) {
+  new_arima[[xx+1]]= new_arima[[xx]]+new_arima[[xx+1]]
+}
+new_arima[[1120]]/1120
+mean_arima<- (new_arima[[1120]]/1120)[5:12]
+mean_arima
+```
+
+```{r}
+new_arima=list()
+for (i in 1:1120) {
+  new_arima[[i]]=(e_arima[[i]])^2
+}
+for (xx in 1:1119) {
+  new_arima[[xx+1]]= new_arima[[xx]]+new_arima[[xx+1]]
+}
+methodv=c("ARIMA (MAE)","ARIMA (RMSE)")
+names=seq(2011,2018,1)
+names= as.character(names)
+new_arima[[1120]]/1120
+rmse_arima<- (new_arima[[1120]]/1120)[5:12]
+rmse_arima<- sqrt(rmse_arima)
+rmse_arima
+cv_yearly<- as.data.frame( rbind(mean_arima, rmse_arima))
+colnames(cv_yearly)<-names
+cv_yearly<- cv_yearly %>% 
+  mutate(method=methodv) %>% 
+  select(method, everything())
+cv_yearly
+
+
+
+
+
+
+
+cvy2<-rbind(cvy, cv_yearly)
+cvy2
+cv
+write.csv(cvy2,  "03-data/code04_timeseries_cv_yearly.csv")
+```
+
+
+
+# mean error MAE
+
+```{r}
+e_arima[[1]]
+mean_arima=list()
+for (i in 1:1120) {
+  mean_arima[[i]]=abs(e_arima[[i]])
+}
+
+emean_total=list()
+emean_total[[1]]=mean_arima[[1]]
+for (x in 1:1119) {
+  emean_total[[x+1]]= c(emean_total[[x]], mean_arima[[x+1]])
+}
+
+
+```
+
+```{r}
+
+mae=mean(emean_total[[1120]], na.rm=TRUE)
+mae
+```
+
+
+rmse error
+
+```{r}
+for (x in 1:1120) {
+  e_arima[[x]]=   e_arima[[x]]^2
+}
+
+```
+
+
+```{r}
+e_total=list()
+e_total[[1]]=e_arima[[1]]
+for (x in 1:1119) {
+  e_total[[x+1]]= c(e_total[[x]], e_arima[[x+1]])
+}
+
+```
+
+```{r}
+rmse=mean(e_total[[1120]], na.rm=TRUE)
+rmse=sqrt(rmse)
+```
+
+the rmse is sqrt(8.55)
+
+```{r}
+cv<-rbind(cv, data.frame(method= c("ARIMA"), MAE= mae, RMSE=rmse))
+cv
+```
+
+```{r}
+write.csv(cv,  "03-data/code04_timeseries_cv.csv")
+```
+
+
+
+END

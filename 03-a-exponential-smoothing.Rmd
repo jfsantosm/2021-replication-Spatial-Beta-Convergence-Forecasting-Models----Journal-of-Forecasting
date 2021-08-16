@@ -1,0 +1,338 @@
+---
+title: "Exponential Smoothing forecast"
+output: 
+  html_notebook:
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 4
+    number_sections: true
+    code_folding: "hide"
+    theme: "cosmo"
+    highlight: "monochrome"
+---
+
+```{r setup}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+#install.packages("devtools")
+library(devtools)
+library(tidyverse)
+library(summarytools)
+library(xtable)
+library(knitr)
+library(ExPanDaR)
+library(plotly)
+library(REAT)
+library(ggpubr)
+library(DT)
+library(ggrepel)
+library(forecast)
+
+# Change the presentation of decimal numbers to 4 and avoid scientific notation
+library(readxl)
+options(prompt="R> ", digits=7, scipen=999)
+```
+
+
+# loading crime data
+
+```{r}
+library(readr)
+long_master_nona <- read_csv("01-raw-data/noNA_long_all_data_master_health_violence_services_education.csv", locale = locale(encoding = "ISO-8859-1"),    col_types = cols(NDVr = col_double(), 
+       eb_ndvr = col_double(), eb_npir = col_double(), 
+       nimr = col_double(), Litr= col_double(), 
+        nmrpr = col_double(), nmpr = col_double() ))
+
+wide_master_nona <- read_csv("01-raw-data/noNA_wide_data_master_health_violence_services_education.csv", locale = locale(encoding = "ISO-8859-1"))
+```
+
+#creating and ID 1:1120 for each municipality time series
+
+```{r}
+nmr<- long_master_nona %>% 
+  filter(year>=2003) %>% 
+  select(2:3,year, starts_with("eb_nmr")) %>% 
+  arrange(code) %>% 
+  mutate(code=as.character(code))
+#nmr %>% 
+a<- nmr %>% 
+  filter(year==2010) %>% 
+  select(code) %>% 
+  mutate(ID=1:nrow(.))
+a
+nmr<- left_join(nmr,a,by="code")
+nmr
+#nmr %>% group_by(ID) %>% summarise(n=n_distinct(municipality))
+```
+
+# creaing a list of time series
+
+```{r}
+ts_list=list()
+id=c(1:1120)
+
+for (x in seq_along(id)) {
+  try <- nmr %>% 
+  filter(ID==id[x])
+  
+  ts_list[[x]] <- ts(try$eb_nmr, start=2003)
+}
+
+```
+
+# plotting the forecast for 2022 for one municipality, the correlogram and the box.Test
+
+
+```{r}
+
+id=171
+
+ts_list[[id]]
+autoplot(ts_list[[id]])
+
+  ets(ts_list[[id]]) %>% 
+forecast(h=4) %>% 
+    autoplot()
+  
+ggAcf(ts_list[[id]], lag.max = 15)
+
+Box.test(ts_list[[id]], lag=5, type = "Ljung")
+
+
+```
+
+    
+# Estimating an ETS model for each municipality    
+    
+    
+```{r}
+nmr2022=c()
+fit_ets=list()
+for (x in 1:1120) {
+  fit <- ets(ts_list[[x]])
+#summary(fit)
+ foreca <-fit %>% forecast(h=4)
+nmr2022[x]= data.frame(foreca)[4,1]
+fit_ets[[x]]<- fit
+ }
+# foreca is a dataframe with the forecast from 2019-2022  
+
+method_ets=c()
+for (x in 1:1120) {
+ method_ets[x]<- fit_ets[[x]]$method
+}
+
+
+```
+    
+# type of ETS fit models 
+
+```{r}
+data_frame(id=1:1120,method_ets)
+```
+
+
+Residuals
+
+Hyndman, R. J., & Athanasopoulos, G. (2018). Forecasting: principles and practice. OTexts.
+3.3 book: "We suggest using h=10 for non-seasonal data and h=2m for seasonal data, where m is the period of seasonality  However, the test is not good when h is large, so if these values are larger than T/5, then use h=T/5"
+
+
+```{r}
+id=1
+
+pval=c()
+
+for (x in 1:1120) {
+  f<-Box.test(residuals(fit_ets[[x]]),lag=3, type = "Lj")
+pval[x]<- f$p.value
+}
+sum(pval<=0.05)
+
+#pval<= 0.05
+id=171
+ggAcf(residuals(fit_ets[[id]]), lag.max = 15)
+Box.test(residuals(fit_ets[[id]]), lag=3 , type = "Lj")
+
+checkresiduals(fit_ets[[id]])
+
+```
+
+    
+    
+# According to this rough prediction how many municipalities will reach the 2022 target?
+    
+```{r}
+nmr2018<- nmr %>% filter(year==2018)
+
+nmr2018$pred2022 <- nmr2022
+nmr2018
+
+target<- 10000-(23.23/10)
+target
+
+
+nmr2018 %>% 
+  filter(eb_nmr<target)
+
+nmr2018 %>% 
+  filter(pred2022<target)
+
+
+```
+
+# Are the time series white noise?
+
+```{r}
+pval=c()
+
+for (x in 1:1120) {
+  f<-Box.test(ts_list[[x]],lag=3, type = "Ljung")
+pval[x]<- f$p.value
+}
+sum(pval<=0.05)
+#pval
+#pval<=0.05
+```
+
+
+#time  series cross validation using Exponential smoothing state space models
+
+```{r}
+fets <- function(x, h) {
+  forecast(ets(x), h = h)
+}
+```
+
+
+```{r}
+#tsCV(ts_list[[1]], naive, h=1)
+e_ets=list()
+for (jj in 1:1120) {
+  e<- tsCV(ts_list[[jj]], initial = 4, fets,h=4)
+e_ets[[jj]]<- e[,4]
+}
+e_ets[[1]]
+```
+
+
+
+```{r}
+mean_ets=list()
+for (i in 1:1120) {
+  mean_ets[[i]]=abs(e_ets[[i]])
+}
+```
+
+
+# new table
+
+
+```{r}
+new_ets=list()
+for (i in 1:1120) {
+  new_ets[[i]]=abs(e_ets[[i]])
+}
+
+for (xx in 1:1119) {
+  new_ets[[xx+1]]= new_ets[[xx]]+new_ets[[xx+1]]
+}
+new_ets[[1120]]/1120
+mean_etsv<- (new_ets[[1120]]/1120)[5:12]
+mean_etsv
+```
+
+```{r}
+new_ets=list()
+for (i in 1:1120) {
+  new_ets[[i]]=(e_ets[[i]])^2
+}
+for (xx in 1:1119) {
+  new_ets[[xx+1]]= new_ets[[xx]]+new_ets[[xx+1]]
+}
+new_ets[[1120]]/1120
+rmse_ets<- (new_ets[[1120]]/1120)[5:12]
+rmse_ets<- sqrt(rmse_ets)
+rmse_ets
+
+
+cv_yearly<- as.data.frame( rbind(mean_etsv, rmse_ets))
+
+methodv=c("ETS (MAE)","ETS (RMSE)")
+names=seq(2011,2018,1)
+names= as.character(names)
+colnames(cv_yearly)<-names
+cv_yearly<- cv_yearly %>% 
+  mutate(method=methodv) %>% 
+  select(method, everything())
+cv_yearly
+write.csv(cv_yearly,  "03-data/code04_timeseries_cv_yearly.csv")
+```
+
+
+
+```{r}
+emean_total=list()
+emean_total[[1]]=mean_ets[[1]]
+for (x in 1:1119) {
+  emean_total[[x+1]]= c(emean_total[[x]], mean_ets[[x+1]])
+}
+
+
+```
+
+
+mean error
+
+```{r}
+
+mae=mean(emean_total[[1120]], na.rm=TRUE)
+mae
+```
+
+
+# rmse error
+
+```{r}
+for (x in 1:1120) {
+  e_ets[[x]]=   e_ets[[x]]^2
+}
+e_ets[[1]]
+```
+
+
+```{r}
+e_total=list()
+e_total[[1]]=e_ets[[1]]
+for (x in 1:1119) {
+  e_total[[x+1]]= c(e_total[[x]], e_ets[[x+1]])
+}
+#e_total[[1120]]
+```
+
+```{r}
+rmse= mean(e_total[[1120]], na.rm=TRUE)
+rmse= sqrt(rmse)
+
+
+```
+
+the rmse is sqrt(11.12473)
+
+
+# saving rmse and mae in a data frame
+
+```{r}
+cv <-data.frame(method=c("ETS"), MAE= mae, RMSE =rmse)
+cv
+```
+
+
+```{r}
+write.csv(cv,  "03-data/code04_timeseries_cv.csv")
+```
+
+
+
+END

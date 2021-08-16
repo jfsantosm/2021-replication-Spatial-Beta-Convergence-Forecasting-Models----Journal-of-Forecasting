@@ -1,0 +1,875 @@
+---
+title: "03-d-spatial-forecasting"
+author: "Felipe Santos-Marquez"
+date: "4/12/2020"
+output: html_document
+---
+
+In this file we look for the tendencies of the beta, alpha and theta coeffcients of the beta regressions (spatial lag of x model) 
+
+# loading required packages
+
+```{r setup}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+library(RCurl)
+library(tidyverse) #
+library(sp)
+library(sf) #
+library(fastmap)
+library(tmap)
+library(tmaptools)
+library(spdep) #
+library(rgeos)
+library(readr)
+library(rgdal)
+library(broom)
+library(stargazer)
+library(skimr)
+library(spatialreg) #
+library(forecast)
+library(summarytools)
+# Change the presentation of decimal numbers to 4 and avoid scientific notation
+options(prompt="R> ", digits=5, scipen=999)
+```
+
+# Importing the master data
+
+```{r}
+noNA_all <- read_csv("01-raw-data/noNA_wide_data_master_health_violence_services_education.csv", locale = locale(encoding = "ISO-8859-1"))
+
+noNA_all
+
+cv<- read_csv(  "03-data/code04_timeseries_cv.csv")
+cv<-cv[,-1]
+cv
+
+cvy<- read_csv(  "03-data/code04_timeseries_cv_yearly.csv")
+cvy<-cvy[,-1]
+```
+
+# Import the municipalities shapefile
+
+
+```{r}
+
+mun<- st_read("01-raw-data/master/mun_master_thesis.shp")
+mun
+object.size(mun)
+s.sp <- as(mun, "Spatial")
+class(s.sp)
+class(mun)
+
+```
+
+
+# selecting intial and final years and creating the variables for the regressions
+
+```{r}
+colnames(noNA_all)
+
+master<- noNA_all %>% 
+  select(c(2:4), starts_with("eb_nmr"))
+master
+```
+
+taking the log of all variables in the master dataframe
+since log(0) is not defined the it is replaced by 0.000001
+
+```{r}
+master[master == 0] <- 0.000001
+
+a<- log(master[,-1:-3])
+a
+b<- master[,1:3] 
+master_log<- cbind(b,a)
+
+```
+
+computing the groewth rate as the substraction Log(yt)-log(y0)
+
+```{r}
+master_log
+seq=c()
+seq<- seq(8,19)
+
+for (i in seq) {
+  master_log[,12+i]<-  master_log[,i]-master_log[,i-4]
+  old_name<-  colnames(master_log)[i]
+  colnames(master_log)[12+i]<- paste("gr",old_name,sep="_")
+}
+master_log
+nmr18masterlog <- master_log %>%  select(code,eb_nmr_2018)
+```
+
+Showing the classical beta conevrgene for one variables
+
+```{r}
+master_log <- master_log%>% 
+  select(-16:-19)
+```
+
+```{r}
+master_log
+```
+
+
+```{r}
+master_log %>% 
+  ggplot(aes(x=eb_nmr_2003,y=gr_eb_nmr_2007))+
+  geom_point()+
+  geom_smooth(method = "lm",se=0)
+
+master_log<- master_log %>% 
+  select(1:3, 4,16, 5,17,6,18,7,19,8,20,9,21,10,22,11,23,12,24,13,25,14,26,15,27 )
+```
+
+
+merging data and shape-file
+
+```{r}
+mun_merge<- merge(s.sp, master_log, by.x="MPIO_CCNCT", by.y="code")
+mun_merge2<- merge(s.sp, nmr18masterlog, by.x="MPIO_CCNCT", by.y="code")
+```
+
+```{r}
+names(mun_merge2) 
+```
+
+# creating weight matrix- queen contiguity criteria
+
+```{r}
+#ids<- mun_merge@data$MPIO_CCNCT
+#IDS <- as.character(ids)
+#nb <- poly2nb(mun_merge, queen=TRUE, row.names = IDS)
+#W.matrixpol <- nb2listw(nb, style="W", zero.policy=TRUE)
+#summary(W.matrixpol)
+
+```
+
+Exporting weight matrix
+
+```{r}
+#queen<- listw2sn(W.matrixpol)
+#summary(W.matrixpol)
+#summary(queen)
+#write.sn2gwt(listw2sn(W.matrixpol), "data/shapefile/master/queen-contiguity.gwt" )
+
+#nc.5nn.mat <- nb2mat(nb)
+
+#write.csv(nc.5nn.mat, file="data/shapefile/master/queen-contiguity.csv" )
+
+```
+
+
+```{r}
+#W.matrixpol<- read.gwt2nb("data/shapefile/master/queen-contiguity.gwt")
+
+W.matrixpol.mat <-read.geoda("01-raw-data/master/queen-contiguity.csv",row.names = 1 )
+
+mat<- as.matrix(W.matrixpol.mat)
+#View(mat)
+
+
+W.matrixpol<- mat2listw(mat)
+
+lw <- nb2listw(W.matrixpol$neighbours, style = "W")
+
+moran.plot(mun_merge$eb_nmr_2003, listw = W.matrixpol)
+
+moran.plot(mun_merge$eb_nmr_2003, listw = lw)
+
+#class(lw)
+
+#class(W.matrixpol)
+
+#lw$neighbours
+#W.matrixpol$neighbours
+```
+
+```{r}
+mun_merge@data
+#mun_merge@data[,13]
+
+```
+
+
+```{r}
+ seq<- seq(14,36,by=2)
+seq
+
+reg.eq=list()
+for (i in 14:36) {
+  reg.eq[[i+1]] <-  colnames(mun_merge@data)[i-1]
+}
+
+reg.eq[[14]] <- gr_eb_nmr_2007 ~ eb_nmr_2003
+reg.eq[[16]] <- gr_eb_nmr_2008 ~ eb_nmr_2004
+reg.eq[[18]] <- gr_eb_nmr_2009 ~ eb_nmr_2005
+reg.eq[[20]] <- gr_eb_nmr_2010 ~ eb_nmr_2006
+reg.eq[[22]] <- gr_eb_nmr_2011 ~ eb_nmr_2007
+reg.eq[[24]] <- gr_eb_nmr_2012 ~ eb_nmr_2008
+reg.eq[[26]] <- gr_eb_nmr_2013 ~ eb_nmr_2009
+reg.eq[[28]] <- gr_eb_nmr_2014 ~ eb_nmr_2010
+reg.eq[[30]] <- gr_eb_nmr_2015 ~ eb_nmr_2011
+reg.eq[[32]] <- gr_eb_nmr_2016 ~ eb_nmr_2012
+reg.eq[[34]] <- gr_eb_nmr_2017 ~ eb_nmr_2013
+reg.eq[[36]] <- gr_eb_nmr_2018 ~ eb_nmr_2014
+
+reg.eq[[14]]
+```
+
+```{r}
+reg=list()
+for (i in seq) {
+  reg[[i]]<-lm(reg.eq[[i]], data = mun_merge)
+}
+lmmorantest=list()
+for (i in seq) {
+ lmmorantest[[i]] <- lm.morantest(reg[[i]], lw)
+}
+
+lmmorantest[[14]]
+
+```
+
+ 
+Model SLX
+
+Spatially Lagged X y=Xß+TWX+e , T=theta, and L=lambda
+
+```{r}
+
+sar=list()
+for (i in seq) {
+  sar[[i]] <- lmSLX(reg.eq[[i]],data = mun_merge, listw = lw)
+}
+
+```
+
+# lw instead of W.matrixpol should be used
+
+```{r}
+
+#lw <- spdep::nb2listw(nb, style="W")
+COL.SLX <- lmSLX(gr_eb_nmr_2007 ~ eb_nmr_2003, data= mun_merge, listw=lw)
+summary(COL.SLX)
+
+
+COL.SLX <- lmSLX(gr_eb_nmr_2007 ~ eb_nmr_2003, data= mun_merge, listw=W.matrixpol)
+summary(COL.SLX)
+```
+
+```{r}
+summary(sar[[14]])
+```
+
+choose variable for which to diplay sem
+
+
+```{r}
+names.dep=names(mun_merge[,-ncol(mun_merge)])
+i=14
+substr(names.dep[i-1],1,nchar(names.dep[i-1])-4)
+
+a<-summary(sar[[14]])
+#sar[[14]]$coefficients[3]
+a<-as.data.frame(a$coefficients)
+a
+a[3,4]
+summary(sar[[14]])
+names(sar[[14]]$coefficients)[3]
+```
+
+ # changing names of coefficients and formula
+ 
+```{r}
+for (i in seq) {
+  names(sar[[i]]$coefficients)[3]<-"theta"
+  names(sar[[i]]$coefficients)[2]<-"log Y0"
+  names(reg[[i]]$coefficients)[2]<- "log Y0"
+  names(sar[[i]]$coefficients)[1]<-"alpha"
+  names(reg[[i]]$coefficients)[1]<-"alpha"
+  }
+
+
+
+ for (i in seq) {
+
+sar[[i]]$call$formula[2]<-substr(names.dep[i-1],1,nchar(names.dep[i-1])-4)
+reg[[i]]$call$formula[2]<-substr(names.dep[i-1],1,nchar(names.dep[i-1])-4)
+ }
+
+
+```
+ 
+ 
+```{r}
+reg[[14]]
+sar[[14]]
+```
+ 
+ 
+
+```{r}
+ vect =rep(1:3, 6)
+columns = rep(c("\\shortstack{no spatial \\\\ effects}", "\\shortstack{spatial\\\\  lag}"),6)
+
+column.labels  = c("no spatial \n effects", "spatial  \nlag")
+columns
+```
+
+
+
+```{r}
+reg[[14]]$coefficients[2]
+sar[[14]]$coefficients[2]
+```
+
+```{r}
+years<-substr(names.dep, nchar(names.dep)-3, nchar(names.dep))
+years<- as.integer(years)
+years
+```
+
+```{r}
+names.dep=names(mun_merge)
+names.dep
+years<-substr(names.dep, nchar(names.dep)-3, nchar(names.dep))
+years<- as.integer(years)
+years
+```
+
+
+```{r}
+seq
+
+speed.values=c()
+halflife.values=c()
+speed.values.sar=c()
+halflife.values.sar=c()
+
+
+for (x in seq) {
+  beta <- reg[[x]]$coefficients[2]
+speed.values[x]<- -log(1+beta)/(years[x]-years[x-1])
+halflife.values[x]<- log(2)/  speed.values[x]
+
+
+beta <- sar[[x]]$coefficients[2]
+speed.values.sar[x]<- -log(1+beta)/(years[x]-years[x-1])
+halflife.values.sar[x]<- log(2)/  speed.values.sar[x]
+
+
+}
+
+
+data.frame(speed.values, halflife.values, names.dep) %>% 
+  filter(!is.na(halflife.values)) %>% 
+  arrange(names.dep)
+
+data.frame(speed.values, halflife.values, names.dep)[seq,]
+
+
+#speed.values[seq]
+#speed.values.sem[seq]
+#speed.values.sar[seq]
+all.speed.values<- c(rbind(speed.values[seq],speed.values.sar[seq]))
+
+all.halflife.values<- c(rbind(halflife.values[seq], halflife.values.sar[seq]))
+```
+
+```{r}
+all.speed.values
+all.halflife.values
+
+```
+
+
+
+# model selection lines
+
+
+
+#lines to be added to stargazer
+
+```{r}
+halflife=c("half life", round(all.halflife.values,2))
+speed=c("\\shortstack{speed of\\\\ convergence}", round(all.speed.values,3))
+
+
+columns
+halflife
+speed
+```
+
+# stargazer tables
+
+```{r}
+i=14
+table.positions=c(1,2:13)
+
+writeLines(capture.output(stargazer(reg[[i]], sar[[i]],reg[[i+2]], sar[[i+2]],reg[[i+4]], sar[[i+4]],reg[[i+6]], sar[[i+6]],reg[[i+8]], sar[[i+8]],reg[[i+10]], sar[[i+10]],digits = 2, float.env = "sidewaystable", column.sep.width = "0.1pt",dep.var.labels.include = TRUE, model.numbers = TRUE, model.names = FALSE, column.labels= columns, column.separate = rep(1,13), add.lines = list(speed[table.positions], halflife[table.positions]), covariate.labels = c("$\\alpha$", "$Y_{T0}$"), omit.stat = c( "ser","sigma2", "wald", "f"))), "03-data/table_beta_nmr_pred1.tex")
+
+i=26
+table.positions=c(1,14:25)
+
+writeLines(capture.output(stargazer(reg[[i]], sar[[i]],reg[[i+2]], sar[[i+2]],reg[[i+4]], sar[[i+4]],reg[[i+6]], sar[[i+6]],reg[[i+8]], sar[[i+8]],reg[[i+10]], sar[[i+10]],digits = 2, float.env = "sidewaystable", column.sep.width = "0.1pt",dep.var.labels.include = TRUE, model.numbers = TRUE, model.names = FALSE, column.labels= columns, column.separate = rep(1,13), add.lines = list(speed[table.positions], halflife[table.positions]), covariate.labels = c("$\\alpha$", "$Y_{T0}$"), omit.stat = c( "ll","lr", "ser","sigma2", "wald", "f"))), "03-data/table_beta_nmr_pred2.tex")
+
+```
+
+
+
+```{r}
+theta=c()
+for (x in seq_along(seq)) {
+  theta[x]<- sar[[seq[x]]]$coefficients[3]
+}
+
+theta
+
+final_coeff <- data.frame(theta, finalyear=2007:2018)
+
+final_coeff%>% 
+  ggplot(aes(x=finalyear, y=theta))+
+  geom_point()+
+  geom_smooth(method="lm")
+
+
+final_coeff
+
+```
+
+```{r}
+beta_nmr=c()
+alpha_nmr=c()
+for (i in 1:12) {
+ beta_nmr[i]<-  sar[[seq[i]]]$coefficients[2]
+ alpha_nmr[i]<- sar[[seq[i]]]$coefficients[1]
+}
+
+final_coeff<- data.frame(final_coeff, alpha_nmr, beta_nmr) 
+final_coeff
+final_coeff_wide<- final_coeff
+```
+
+```{r}
+final_coeff%>% 
+  #filter(finalyear<=2017) %>% 
+  ggplot(aes(x=finalyear, y=theta))+
+  geom_point()+
+  geom_smooth(method="lm")
+
+final_coeff%>% 
+  ggplot(aes(x=finalyear, y=alpha_nmr))+
+  geom_point()+
+  geom_smooth(method="lm")
+
+final_coeff%>% 
+  ggplot(aes(x=finalyear, y=beta_nmr))+
+  geom_point()+
+  geom_smooth(method="lm")
+
+
+beta_pred=0
+alpha_pred=0
+theta_pred=0
+
+
+reg_beta<-lm(beta_nmr~finalyear, final_coeff)
+#summary(reg)
+beta_pred<- predict(reg_beta, data.frame(finalyear=2022))
+reg_alpha<-lm(alpha_nmr~finalyear, final_coeff)
+#summary(reg2)
+alpha_pred<- predict(reg_alpha, data.frame(finalyear=2022))
+reg_theta<-lm(theta~finalyear, final_coeff)
+#summary(reg)
+theta_pred<- predict(reg_theta, data.frame(finalyear=2022))
+
+beta_pred
+alpha_pred
+theta_pred
+```
+
+
+ 
+```{r}
+final_coeff
+colnames(final_coeff)[3]<-"alpha"
+colnames(final_coeff)[4]<-"beta"
+
+
+final_coeff<- final_coeff %>% 
+  select(2,1,3,4) %>% 
+  gather(beta_con, value,2:4) 
+
+final_coeff%>% 
+  ggplot(aes(x=finalyear, y=value)) +
+  geom_line(linetype = "dashed", lwd=1)+
+  geom_smooth(method="lm", se=FALSE)+
+  facet_grid(rows=vars(beta_con),scales="free")+
+  theme_minimal() +
+  labs(subtitle = "",
+       x = "final year",
+       y = "value of the coefficient") +
+  theme(text=element_text( family="Palatino"))
+```
+ 
+```{r}
+write.csv(final_coeff, "03-data/code04_table_spatialpred.csv")
+```
+
+
+# 2022 target
+
+```{r}
+
+tarnmr<- 10000-(23.23/10)
+tarnmr
+#exp(predict(sar[[36]], as.data.frame(mun_merge@data$NMr2014), listw = W.matrixpol)+ log(mun_merge@data$NMr2014))
+```
+     1 
+-0.5049 
+       1 
+-0.53483 
+      1 
+0.56297 
+
+# 2022 crime forecast
+
+
+```{r}
+#mun_merge@data$MPIO_CCNCT
+try <- data.frame(code = mun_merge2@data$MPIO_CCNCT, nmr18 = mun_merge2@data$eb_nmr_2018)
+
+try$nmrlag18<-lag.listw(lw,
+                         mun_merge2@data$eb_nmr_2018, zero.policy=TRUE)
+try
+
+
+x=1
+try_alpha<- sar[[seq[x]]]$coefficients[1]
+try_beta<-sar[[seq[x]]]$coefficients[2]
+try_theta<- sar[[seq[x]]]$coefficients[3] 
+try_alpha
+try_beta
+try_theta
+
+try_alpha <- alpha_pred
+try_beta <- beta_pred
+try_theta <- theta_pred
+
+try_alpha
+try_beta
+try_theta
+try$nmr18nl<-  exp(try$nmr18)
+try$NMr2022<-exp(try_alpha+((1+try_beta)*(try$nmr18))+(try_theta*(try$nmrlag18)))
+
+try
+
+```
+
+
+
+```{r}
+
+sum(try$nmr18nl< tarnmr)
+sum(try$NMr2022< tarnmr)
+
+pred2022<- master %>% 
+  select(code, eb_nmr_2003, eb_nmr_2018) %>% 
+  left_join(., try, by="code") %>% 
+  select(code,eb_nmr_2003, eb_nmr_2018, NMr2022 )
+pred2022
+write.csv(pred2022, "03-data/code04_table_pred2022.csv")
+
+data.frame(descr(pred2022,
+      headings = FALSE, # remove headings
+      stats = "common"))# most common descriptive statistics
+```
+
+
+
+
+# if we have data up to 2014 what will the forecast for nmr in 2018 be?
+
+```{r}
+final_coeff_wide
+final_coeff_14 <- final_coeff_wide %>% filter(finalyear<=2014)
+final_coeff_14
+
+
+final_coeff_14%>% 
+  ggplot(aes(x=finalyear, y=alpha_nmr))+
+  geom_point()+
+  geom_smooth(method="lm")
+
+final_coeff_14%>% 
+  ggplot(aes(x=finalyear, y=beta_nmr))+
+  geom_point()+
+  geom_smooth(method="lm")
+
+final_coeff_14%>% 
+  ggplot(aes(x=finalyear, y=theta))+
+  geom_point()+
+  geom_smooth(method="lm")
+
+beta_pred=0
+alpha_pred=0
+rho_pred=0
+
+
+reg_beta<-lm(beta_nmr~finalyear, final_coeff_14)
+#summary(reg)
+beta_pred<- predict(reg_beta, data.frame(finalyear=2018))
+reg_alpha<-lm(alpha_nmr~finalyear, final_coeff_14)
+#summary(reg2)
+alpha_pred<- predict(reg_alpha, data.frame(finalyear=2018))
+reg_theta<-lm(theta~finalyear, final_coeff_14)
+#summary(reg)
+theta_pred<- predict(reg_theta, data.frame(finalyear=2018))
+
+
+alpha_pred
+beta_pred
+theta_pred
+```
+
+
+forecast for 2018
+
+```{r}
+try <- data.frame(code = mun_merge@data$MPIO_CCNCT, eb_nmr_2014=mun_merge@data$eb_nmr_2014)
+try$nmrlag14<-lag.listw(lw, mun_merge@data$eb_nmr_2014,zero.policy=TRUE)
+try<- left_join(try, nmr18masterlog, by="code")
+
+try
+```
+
+
+```{r}
+try
+try_alpha <- alpha_pred
+try_beta <- beta_pred
+try_theta <- theta_pred
+try<- try %>% 
+  mutate(fc2018=exp(try_alpha+((1+try_beta)*(try$eb_nmr_2014))+(try_theta*(try$nmrlag14)))) %>% 
+  mutate(eb_nmr2018=exp(eb_nmr_2018)) %>% 
+    mutate(forecast_error=eb_nmr2018 - fc2018)
+try
+```
+
+```{r}
+try %>% arrange(forecast_error)
+mean((try$forecast_error)^2)
+```
+
+# time series cross validation for h=4
+
+
+```{r}
+
+ final_coeff <- final_coeff_wide
+betax=c()
+alphax=c()
+thetax=c()
+for (x in seq_along(2011:2018)) {
+  ye=2007+(x-1)
+
+final_coeff_xx <- final_coeff %>% filter(finalyear<=ye)
+
+reg_beta<-lm(beta_nmr~finalyear, final_coeff_xx)
+beta_pred<- predict(reg_beta, data.frame(finalyear=ye+4))
+
+reg_alpha<-lm(alpha_nmr~finalyear, final_coeff_xx)
+alpha_pred<- predict(reg_alpha, data.frame(finalyear=ye+4))
+
+reg_theta<-lm(theta~finalyear, final_coeff_xx)
+theta_pred<- predict(reg_theta, data.frame(finalyear=ye+4))
+
+betax[x] = beta_pred
+alphax[x]= alpha_pred
+thetax[x]= theta_pred
+}
+```
+
+
+```{r}
+thetax
+alphax
+betax
+master
+mun_merge_nolog<- merge(s.sp, master, by.x="MPIO_CCNCT", by.y="code")
+```
+
+```{r}
+masterxx<- master
+mun_merge_nolog@data
+yearx=c(2007:2018)
+for (xx in 17:28) {
+  mun_merge_nolog@data$nmrlag <-lag.listw(lw, mun_merge_nolog@data[[xx]],zero.policy=TRUE)
+  a<- mun_merge_nolog@data %>%  select(MPIO_CCNCT, nmrlag)
+masterxx <- left_join(masterxx, a, by=c("code"="MPIO_CCNCT"))
+colnames(masterxx)[ncol(masterxx)]<- paste("lag",colnames(mun_merge_nolog@data)[xx], sep = "")
+}
+
+```
+
+```{r}
+masterxx
+masterxx<- masterxx %>% 
+  select(8:31)
+masterxx
+```
+
+
+```{r}
+masterxx
+j=1
+for (jj in 1:8) {
+  fc_nmr <-  exp(alphax[jj]+((1+betax[[jj]])*(log(masterxx[[jj]])))+(thetax[[jj]]*(log(masterxx[[jj+12]]))))
+  masterxx<- cbind(masterxx, fc_nmr)
+  colnames(masterxx)[ncol(masterxx)]<-paste("fc",colnames(masterxx)[jj+4],sep="")
+  
+}
+```
+
+```{r}
+ masterxx
+```
+
+
+```{r}
+#log(masterxx[[jj]])
+
+masterxxx<- masterxx %>% 
+  select(starts_with(c("eb","fc"))) %>% 
+  select(5:20)
+masterxxx
+
+year=c(2011:2018)
+forecast_error=c()
+for (i in seq_along(year)) {
+   forecast_error= (masterxxx[[i]]-masterxxx[[i+8]])^2
+masterxxx<- cbind(masterxxx, forecast_error)
+colnames(masterxxx)[ncol(masterxxx)]<- paste("for.error", as.character(year[i]), sep="")
+   }
+```
+
+```{r}
+masterxxx
+
+error<-masterxxx %>% 
+select(starts_with("for.er"))
+rmse = mean(as.matrix(error))
+rmse = sqrt(rmse)
+rmsev= rmse
+error
+
+```
+
+
+# new tables
+
+
+```{r}
+#cv
+#RMSE
+#error
+rmse<-error %>% 
+  summarise_all(sum)
+rmse<-sqrt(rmse/1120)
+rmse
+#MAE
+
+mae_y <- sqrt(error)
+#mae_y
+mae_y<- mae_y%>% 
+  summarise_all(sum)
+mae_y<- mae_y/1120
+mae_y
+
+cvy
+cv_yearly<- rbind(mae_y, rmse)
+
+methodv=c("Spatial BETA (MAE)","Spatial BETA (RMSE)")
+names=seq(2011,2018,1)
+names= as.character(names)
+colnames(cv_yearly)<-names
+cv_yearly<- cv_yearly %>% 
+  mutate(method=methodv) %>% 
+  select(method, everything())
+cv_yearly
+cvy2<- rbind(cvy, cv_yearly)
+cvy2
+write.csv(cvy2,  "03-data/code04_timeseries_cv_yearly.csv")
+```
+
+the RMSE is  sqrt(5.5358)
+
+
+```{r}
+error
+mae<-mean(as.matrix(sqrt(error)))
+mae
+```
+
+```{r}
+cv<-rbind(cv, data.frame(method= c("Beta Spatial"), MAE= mae, RMSE=rmsev))
+cv
+```
+
+```{r}
+write.csv(cv,  "03-data/code04_timeseries_cv.csv")
+```
+
+```{r}
+masterxxx %>% 
+  arrange(desc(for.error2018))
+```
+
+#can the predictions of alpha beta and theta be improved?
+
+
+```{r}
+final_coeff
+
+
+alpha_ts<- ts(final_coeff$alpha_nmr, start=2007)
+beta_ts<- ts(final_coeff$beta_nmr, start=2007)
+theta_ts<- ts(final_coeff$theta, start=2007)
+
+#alpha_ts<- window(alpha_ts,end=2017)
+#beta_ts<- window(beta_ts,end=2017)
+#rho_ts<- window(rho_ts,end=2017)
+
+autoplot(alpha_ts)
+autoplot(beta_ts)
+autoplot(theta_ts)
+
+ggAcf(alpha_ts)
+ggAcf(beta_ts)
+ggAcf(theta_ts)
+
+fita_arima <- auto.arima(alpha_ts)
+fitb_arima <- auto.arima(beta_ts)
+fitr_arima <- auto.arima(theta_ts)
+fita_ets <- ets(alpha_ts)
+fitb_ets <- ets(beta_ts)
+fitr_ets <- ets(theta_ts)
+
+```
+
+It appears that prediction models can not be used for these parameters, as the time series appear to be white noise. and the forecast resembles a naive forfecast
+
+```{r}
+fita_arima %>% forecast(h=4) %>% autoplot()
+fitb_arima %>% forecast(h=4) %>% autoplot()
+fitr_arima %>% forecast(h=4) %>% autoplot()
+
+fita_ets %>% forecast(h=4) %>% autoplot()
+fitb_ets %>% forecast(h=4) %>% autoplot()
+fitr_ets %>% forecast(h=4) %>% autoplot()
+
+
+```
+

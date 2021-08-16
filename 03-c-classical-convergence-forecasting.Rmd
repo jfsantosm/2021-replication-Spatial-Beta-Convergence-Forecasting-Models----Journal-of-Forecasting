@@ -1,0 +1,481 @@
+---
+title: "classical convergence forecasting for nmr"
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_depth: '4'
+  html_notebook:
+    code_folding: hide
+    highlight: monochrome
+    number_sections: yes
+    theme: cosmo
+    toc: yes
+    toc_depth: 4
+    toc_float:
+      collapsed: no
+      smooth_scroll: no
+  pdf_document:
+    toc: yes
+    toc_depth: '4'
+---
+
+
+```{r setup}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+library(devtools)
+library(ExPanDaR)
+library(knitr)
+library(tidyverse)
+library(modelr)
+library(broom)
+library(data.table)
+library(readxl)
+
+#Install and load older versions of the following packages
+#remove.packages("REAT")
+#install_version("REAT", version = "2.1.1", repos = "http://cran.us.r-project.org")
+library(REAT)
+library(forecast)
+
+# Change the presentation of decimal numbers to 4 and avoid scientific notation
+options(prompt="R> ", digits=8, scipen=999)
+```
+
+# Import the master dataste
+
+Via the `tidyverse` package
+
+```{r}
+library(readr)
+long_master_nona <- read_csv("01-raw-data/noNA_long_all_data_master_health_violence_services_education.csv", locale = locale(encoding = "ISO-8859-1"),    col_types = cols(NDVr = col_double(), 
+       eb_ndvr = col_double(), eb_npir = col_double(), 
+       nimr = col_double(), Litr= col_double(), 
+        nmrpr = col_double(), nmpr = col_double() ))
+wide_master_nona <- read_csv("01-raw-data/noNA_wide_data_master_health_violence_services_education.csv", locale = locale(encoding = "ISO-8859-1"))
+
+
+cv<- read_csv(  "03-data/code04_timeseries_cv.csv")
+cv<-cv[,-1]
+
+cvy<- read_csv(  "03-data/code04_timeseries_cv_yearly.csv")
+cvy<-cvy[,-1]
+```
+
+# Preparing the dataset
+
+Selecting variables needed
+```{r}
+wide_master_nona
+```
+
+
+# how many municiplaities will achieve the SDGs target by 2022
+
+is the speed of convergence changing over time?
+
+```{r}
+
+nmr<- wide_master_nona %>% 
+  select(2:5,starts_with("eb_nmr"))
+nmr
+alpha=c()
+lambda=c()
+beta_coefficient=c()
+half_life=c()
+p_value=c()
+years=c()
+list_beta=list()
+year_final=c()
+for (i in 1:12) {
+  tab<-nmr%>% 
+  select(5:20)
+  tab<- tab %>% 
+    select(i,i+4)
+  name1<- as.character(colnames(tab)[1])
+  name2<- as.character(colnames(tab)[2])
+  colnames(tab)[1]<-"FY_yo"
+  colnames(tab)[2]<-"FY_yt"
+    tab
+beta <- betaconv.ols (tab$FY_yo, i, tab$FY_yt, i+4,
+                       beta.plot = FALSE,
+                       beta.plotLine = TRUE,
+                       beta.plotX = paste("Ln (non murder rate in", name1), 
+                       beta.plotY = paste("Annual Growth Rate",name1,name2), 
+                       beta.plotTitle = paste(name1,name2),
+                      beta.plotLineCol = "purple",output.results = FALSE)
+alpha[i]<-as.data.frame(beta[["abeta"]])[1,1]
+beta_coefficient[i]<-as.data.frame(beta[["abeta"]])[2,1]
+lambda[i]<-as.data.frame(beta[["abeta"]])[3,1]
+half_life[i]<-as.data.frame(beta[["abeta"]])[4,1]
+p_value[i]<-as.data.frame(beta[["abeta"]])[2,4]
+years[i]<- paste(substr(name1,nchar(name1)-3,nchar(name1)),substr(name2,nchar(name2)-3,nchar(name2)),sep="-")
+year_final[i]<- as.integer(substr(name2,nchar(name2)-3,nchar(name2)),sep="-")
+list_beta[[i]]<- beta
+}
+
+nmr_beta<- data.frame(years,year_final, alpha,beta_coefficient,lambda, half_life,p_value)
+```
+
+```{r}
+nmr_beta
+```
+
+```{r}
+nmr_beta
+nmr_beta %>% 
+  #ggplot(aes(x=year_final, y=beta_coefficient))+
+  ggplot(aes(x=year_final, y=alpha)) +
+  geom_point()+
+  geom_smooth(method="lm")
+nmr_beta %>% 
+  #ggplot(aes(x=year_final, y=beta_coefficient))+
+  ggplot(aes(x=year_final, y=lambda)) +
+  geom_point()+
+  geom_smooth(method="lm")
+
+nmr_beta %>% 
+  ggplot(aes(x=year_final, y=beta_coefficient))+
+  #ggplot(aes(x=year_final, y=lambda)) +
+  geom_point()+
+  geom_smooth(method="lm")
+
+lm_nmr_beta <- lm(beta_coefficient~year_final, nmr_beta)
+lm_nmr_beta %>%  tidy()
+newd <- data.frame(year_final=2022)
+beta_2022<- predict(lm_nmr_beta,newd)
+
+lm_nmr_lambda <- lm(lambda~year_final, nmr_beta)
+lm_nmr_lambda %>%  tidy()
+newd <- data.frame(year_final=2022)
+lambda_2022<- predict(lm_nmr_lambda,newd)
+
+lm_nmr_alpha <- lm(alpha~year_final, nmr_beta)
+lm_nmr_alpha %>%  tidy()
+newd <- data.frame(year_final=2022)
+alpha_2022<- predict(lm_nmr_alpha,newd)
+alpha_2022
+beta_2022
+lambda_2022
+```
+
+```{r}
+final_coeff<- nmr_beta %>%  select(-1)
+final_coeff
+```
+
+# saving estimates of coefficients over time 
+
+```{r}
+write.csv(final_coeff, "03-data/code04_table_pred.csv")
+```
+
+
+# how many municiplaities will achieve the NMR SDGs target by 2022
+
+
+```{r}
+#long_master_nona
+long_master_nona %>% 
+  select(1:6,eb_nmr) %>% 
+  filter(year==2018) %>% 
+  summarise(mean(eb_nmr))
+
+#target 23,23 per 100.000 people
+
+target<- 10000-(23.23/10)
+target
+
+nmr_2018 <- long_master_nona %>% 
+  select(code,year,eb_nmr) %>% 
+  filter(year==2018) %>% 
+  filter(eb_nmr < target)
+
+nmr_2018
+
+y2022=c()
+y2022 <- exp(alpha_2022+((1+beta_2022)*log(nmr_2018$eb_nmr)))
+#y2022
+
+nmr_2018$NMr2022 <- y2022
+nmr_2018 %>% 
+  filter(NMr2022<target)
+```
+
+
+We would like to forecast the value of NMR for the year 2022 but having data up to 2018, that is h=4.
+we could try to use as a training set data from 2003 to 2014 in order to predidct the value of 2018 and compare it with the real value
+
+
+```{r}
+nmr_beta_14<- nmr_beta %>% 
+  filter(year_final<=2014)
+
+nmr_beta_14
+nmr_beta_14 %>% 
+  #ggplot(aes(x=year_final, y=beta_coefficient))+
+  ggplot(aes(x=year_final, y=alpha)) +
+  geom_point()+
+  geom_smooth(method="lm")
+nmr_beta_14 %>% 
+  #ggplot(aes(x=year_final, y=beta_coefficient))+
+  ggplot(aes(x=year_final, y=lambda)) +
+  geom_point()+
+  geom_smooth(method="lm")
+
+nmr_beta_14 %>% 
+  ggplot(aes(x=year_final, y=beta_coefficient))+
+  #ggplot(aes(x=year_final, y=lambda)) +
+  geom_point()+
+  geom_smooth(method="lm")
+
+lm_nmr_beta_14 <- lm(beta_coefficient~year_final, nmr_beta_14)
+lm_nmr_beta_14 %>%  tidy()
+newd <- data.frame(year_final=2018)
+beta_2018<- predict(lm_nmr_beta_14,newd)
+
+lm_nmr_lambda <- lm(lambda~year_final, nmr_beta_14)
+lm_nmr_lambda %>%  tidy()
+newd <- data.frame(year_final=2018)
+lambda_2018<- predict(lm_nmr_lambda,newd)
+
+lm_nmr_alpha <- lm(alpha~year_final, nmr_beta_14)
+lm_nmr_alpha %>%  tidy()
+newd <- data.frame(year_final=2018)
+alpha_2018<- predict(lm_nmr_alpha,newd)
+alpha_2018
+beta_2018
+lambda_2018
+```
+
+
+We can now compute the forecast for 2018 and compare it to the actual value
+
+
+```{r}
+#long_master_nona
+
+nmr_2018 <- wide_master_nona %>% 
+  select(code,eb_nmr_2014, eb_nmr_2018) 
+
+nmr_2018
+
+y2018=c()
+y2018 <- exp(alpha_2018+((1+beta_2018)*log(nmr_2018$eb_nmr_2014)))
+#y2022
+
+nmr_2018$fc2018 <- y2018
+nmr_2018 <- nmr_2018 %>% 
+  mutate(forecast_error=eb_nmr_2018-fc2018)
+nmr_2018 %>% arrange(forecast_error)
+
+```
+
+
+```{r}
+mean((nmr_2018$forecast_error)^2)
+```
+
+
+
+#  time series cross validation for h=4
+```{r}
+nmr_beta
+```
+
+```{r}
+alphax=c()
+betax=c()
+lambdax=c()
+nmr_beta
+for (x in seq_along(2011:2018)) {
+  ye=2007+(x-1)
+  nmr_betax<- nmr_beta %>% 
+  filter(year_final<=ye)
+
+lm_nmr_betax <- lm(beta_coefficient~year_final, nmr_betax)
+lm_nmr_betax %>%  tidy()
+newd <- data.frame(year_final=ye+4)
+beta_x4<- predict(lm_nmr_betax,newd)
+
+lm_nmr_lambda <- lm(lambda~year_final, nmr_betax)
+lm_nmr_lambda %>%  tidy()
+newd <- data.frame(year_final=ye+4)
+lambda_x4<- predict(lm_nmr_lambda,newd)
+
+lm_nmr_alpha <- lm(alpha~year_final, nmr_betax)
+lm_nmr_alpha %>%  tidy()
+newd <- data.frame(year_final=ye+4)
+alpha_x4<- predict(lm_nmr_alpha,newd)
+alphax[x]= alpha_x4
+betax[x]=beta_x4
+lambda[x]=lambda_x4
+ 
+}
+
+
+```
+
+```{r}
+alphax
+```
+
+
+```{r}
+nmr_xx <- wide_master_nona %>% 
+  select(code,starts_with("eb_nmr")) 
+
+nmr_xx
+
+fc_nmr=c()
+
+for (jj in 1:8) {
+  
+  fc_nmr <- exp(alphax[jj]+((1+betax[[jj]])*log(nmr_xx[[jj+5]])))
+  
+  nmr_xx<- cbind(nmr_xx, fc_nmr)
+  colnames(nmr_xx)[ncol(nmr_xx)]<-paste("fc",colnames(nmr_xx)[jj+9],sep="")
+  
+}
+
+nmr_xx
+```
+
+
+```{r}
+nmr_xxx<- nmr_xx %>% 
+  select(10:25)
+year=c(2011:2018)
+forecast_error=c()
+nmr_xxx
+for (i in seq_along(year)) {
+   forecast_error= (nmr_xxx[[i]]-nmr_xxx[[i+8]])^2
+nmr_xxx<- cbind(nmr_xxx, forecast_error)
+colnames(nmr_xxx)[ncol(nmr_xxx)]<- paste("for.error", as.character(year[i]), sep="")
+   }
+
+```
+
+```{r}
+nmr_xxx
+error<-nmr_xxx %>% 
+  select(17:24)
+rmsev<-mean(as.matrix(error))
+rmsev= sqrt(rmsev)
+```
+
+# new tables
+
+```{r}
+#cv
+#RMSE
+#error
+rmse<-error %>% 
+  summarise_all(sum)
+rmse<-sqrt(rmse/1120)
+rmse
+
+#MAE
+
+mae_y <- sqrt(error)
+#mae_y
+mae_y<- mae_y%>% 
+  summarise_all(sum)
+mae_y<- mae_y/1120
+mae_y
+
+cvy
+cv_yearly<- rbind(mae_y, rmse)
+
+methodv=c("BETA (MAE)","BETA (RMSE)")
+names=seq(2011,2018,1)
+names= as.character(names)
+colnames(cv_yearly)<-names
+cv_yearly<- cv_yearly %>% 
+  mutate(method=methodv) %>% 
+  select(method, everything())
+cv_yearly
+cvy2<- rbind(cvy, cv_yearly)
+write.csv(cvy2,  "03-data/code04_timeseries_cv_yearly.csv")
+```
+
+
+
+
+
+the RMSE is  sqrt(6.1883245)
+
+```{r}
+error
+mae<-mean(as.matrix(sqrt(error)))
+mae
+```
+
+```{r}
+cv<-rbind(cv, data.frame(method= c("Beta"), MAE= mae, RMSE=rmsev))
+cv
+```
+
+```{r}
+write.csv(cv,  "03-data/code04_timeseries_cv.csv")
+```
+
+
+# Improving the prediction of alpha and beta 
+```{r}
+nmr_beta 
+nmr_beta %>% 
+  #ggplot(aes(x=year_final, y=beta_coefficient))+
+  ggplot(aes(x=year_final, y=alpha)) +
+  geom_point()+
+  geom_smooth(method="lm")
+nmr_beta %>% 
+  #ggplot(aes(x=year_final, y=beta_coefficient))+
+  ggplot(aes(x=year_final, y=lambda)) +
+  geom_point()+
+  geom_smooth(method="lm")
+
+nmr_beta %>% 
+  ggplot(aes(x=year_final, y=beta_coefficient))+
+  #ggplot(aes(x=year_final, y=lambda)) +
+  geom_point()+
+  geom_smooth(method="lm")
+```
+
+
+for forecasting nmr a prediction of beta and apha is needed can the forecasting of these coefficients be improved?
+
+
+```{r}
+alpha_ts<- ts(nmr_beta$alpha, start=2007)
+beta_ts<- ts(nmr_beta$beta_coefficient, start=2007)
+autoplot(alpha_ts)
+autoplot(beta_ts)
+
+ggAcf(alpha_ts)
+ggAcf(beta_ts)
+
+fita_arima <- auto.arima(alpha_ts)
+fitb_arima <- auto.arima(beta_ts)
+fita_ets <- ets(alpha_ts)
+fitb_ets <- ets(beta_ts)
+
+
+```
+
+as it can be seen below, beta and alpha may not be predicted using arima or ets models since the trend is not considered. 
+
+
+```{r}
+fita_arima %>% forecast(h=4) %>% autoplot()
+fitb_arima %>% forecast(h=4) %>% autoplot()
+fita_ets %>% forecast(h=4) %>% autoplot()
+fitb_ets %>% forecast(h=4) %>% autoplot()
+
+
+```
+
+
+```{r}
+sessionInfo()
+```

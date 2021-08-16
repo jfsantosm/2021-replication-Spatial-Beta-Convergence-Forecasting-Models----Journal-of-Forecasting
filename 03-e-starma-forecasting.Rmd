@@ -1,0 +1,523 @@
+---
+title: "starma forecast"
+output: 
+  html_notebook:
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 4
+    number_sections: true
+    code_folding: "hide"
+    theme: "cosmo"
+    highlight: "monochrome"
+---
+
+```{r setup}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+#install.packages("devtools")
+library(devtools)
+library(tidyverse)
+library(summarytools)
+library(xtable)
+library(knitr)
+library(ExPanDaR)
+library(plotly)
+library(REAT)
+library(ggpubr)
+library(DT)
+library(ggrepel)
+library(forecast)
+library(starma)
+library(sp)
+library(sf)
+library(fastmap)
+library(tmap)
+library(tmaptools)
+library(spdep)
+library(rgdal)
+
+# Change the presentation of decimal numbers to 4 and avoid scientific notation
+library(readxl)
+options(prompt="R> ", digits=7, scipen=999)
+```
+
+
+# loading crime data and shapefiles
+
+```{r}
+library(readr)
+long_master_nona <- read_csv("01-raw-data/noNA_long_all_data_master_health_violence_services_education.csv", locale = locale(encoding = "ISO-8859-1"),    col_types = cols(NDVr = col_double(), 
+       eb_ndvr = col_double(), eb_npir = col_double(), 
+       nimr = col_double(), Litr= col_double(), 
+        nmrpr = col_double(), nmpr = col_double() ))
+
+wide_master_nona <- read_csv("01-raw-data/noNA_wide_data_master_health_violence_services_education.csv", locale = locale(encoding = "ISO-8859-1"))
+
+cv<- read_csv(  "03-data/code04_timeseries_cv.csv")
+cv<-cv[,-1]
+cv
+cvy<- read_csv(  "03-data/code04_timeseries_cv_yearly.csv")
+cvy<-cvy[,-1]
+```
+
+```{r}
+mun<- st_read("01-raw-data/master/mun_master_thesis_centroid.shp")
+object.size(mun)
+s.sp <- as(mun, "Spatial")
+class(s.sp)
+class(mun)
+```
+
+```{r}
+mun.pol <- readOGR("01-raw-data/master/mun_master_thesis.shp")
+object.size(mun.pol)
+s.sp.pol <- as(mun.pol, "Spatial")
+class(s.sp.pol)
+class(mun.pol)
+```
+
+
+# the data should have the same order as the shapefile, because a weight matrix will be used further on
+
+```{r}
+order<- mun.pol@data %>% 
+  select(MPIO_CCNCT, MPIO_CNMBR)
+```
+
+
+```{r}
+try<- wide_master_nona %>% 
+  select(code, starts_with("eb_nmr"))
+
+try<- left_join(order, try, by=c("MPIO_CCNCT"="code"))
+try
+names <- paste("m",try$MPIO_CCNCT, sep="")
+zdat<- t(try[,-1:-2])
+zdat<- as.data.frame(zdat)
+colnames(zdat)<- names
+zdat
+dat<- zdat
+```
+
+
+# the data should be cetered using the function `stcenter`
+
+```{r}
+zdat<- stcenter(zdat)
+zdat
+```
+
+# using polygons creating neighbours object using a queen contiguity criterion
+
+```{r}
+nb <- poly2nb(mun.pol, queen=TRUE)
+listw<-  nb2listw(nb, style="W", zero.policy=TRUE)
+summary(nb)
+```
+
+
+```{r}
+
+plot(mun.pol, border = 'lightgrey')
+plot(nb, coordinates(mun.pol), add=TRUE, col='red')
+```
+
+
+# creating the lag nb that will be used in the starma function
+
+```{r}
+knb <- nblag(nb,3)
+summary(knb[[3]])
+```
+
+
+```{r}
+pdf("map_colombia_neighbors.pdf", width = 10, height = 10)
+# 2. Create the plot
+plot(mun.pol, border = 'lightgrey')
+plot(knb[[1]], coordinates(mun.pol), add=TRUE, col='red')
+plot(knb[[2]], coordinates(mun.pol), add=TRUE, col='blue')
+# 3. Close the file
+dev.off()
+```
+
+# creating klist
+
+```{r}
+#knb[[1]][[1]]
+#knb[[2]][[1]]
+summary(knb[[1]])
+summary(knb[[2]])
+klist <- list(order0=diag(1120),order1=nb2mat(knb[[1]]))#,order2=nb2mat(knb[[2]]))#,order3=nb2mat(knb[[3]]))#,order4=nb2mat(knb[[4]]))
+
+```
+
+# step 1: dentification: Using stacf and stpacf, the user should try to identify which parameters should be estimated 
+
+```{r}
+zdat
+
+stacf(zdat, klist)
+
+```
+
+
+```{r}
+stpacf(zdat, klist)
+```
+
+
+
+From the previous grapahs it appears that the time lag should be 1
+
+
+```{r}
+loglikl=c()
+bicr=c()
+modeli=list()
+
+# Estimate the process
+#ar <- matrix(c(1, 1, 1, 0), 2, 2)
+#ma <- matrix(c(0, 1), 1, 2)
+
+for (i in 1:4) {
+ar<- i
+ma<- 0
+model <- starma(zdat, klist, ar, ma, iterate=0)
+loglikl[i]<- model$loglik
+bicr[i]<- model$bic
+modeli[[i]]<- model
+#summary(model)
+}
+#a$coefficients
+# Diagnose the process
+#stcor.test(model$residuals, klist, fitdf=4)
+#stacf(model$residuals, klist)
+#stpacf(model$residuals, klist)
+```
+
+```{r}
+loglikl
+bicr
+```
+]
+
+```{r}
+summary(modeli[[1]])
+summary(modeli[[2]])
+summary(modeli[[3]])
+summary(modeli[[4]])
+
+```
+
+
+# How was the residuals object created?
+
+first lets look at the the way in which the zdat was cretead it has a 0 mean and 1 sd 
+
+```{r}
+data.frame(modeli[[1]]$residuals)
+zdat
+
+# Check  mean
+sum(zdat) / (nrow(zdat) * ncol(zdat))
+# Check for sd
+sqrt( sum(zdat^2) / (nrow(zdat) * ncol(zdat) - 1)) 
+```
+
+the mean and the standard deviation of the original data
+
+```{r}
+# Check  mean
+sum(dat) / (nrow(dat) * ncol(dat))
+mean<- sum(dat) / (nrow(dat) * ncol(dat))
+# Check for sd
+sqrt( sum((dat-mean)^2) / (nrow(dat) * ncol(dat) - 1)) 
+sd<- sqrt( sum((dat-mean)^2) / (nrow(dat) * ncol(dat) - 1)) 
+```
+
+
+
+```{r}
+(zdat*sd)+mean
+dat
+
+resid<-((data.frame(modeli[[1]]$residuals))*sd)+mean
+resid
+```
+
+
+```{r}
+error<- ((dat-resid)^2)
+
+error<- error[-1,]
+
+mean(as.matrix(error))
+
+```
+
+
+# this is a mistake the residuals have to be transformed
+
+```{r}
+error2<- (data.frame(modeli[[1]]$residuals))
+
+error2 <- error2[-1,]
+error2<- error2^2
+error2
+sqrt(mean(as.matrix(error2)))
+```
+
+
+
+# using the  star equation equation to calculate residuals
+
+$$z_{t}=\sum_{k=1}^{p} \sum_{l=0}^{\lambda_{k}} \phi_{k l} W^{(l)} z_{t-k}+\sum_{k=1}^{q} \sum_{l=0}^{m_{k}} \theta_{k l} W^{(l)} \epsilon_{t-k}+\epsilon_{t}$$
+
+where $\theta_{k l}$ is 0 because only a star porcess is being considered
+
+```{r}
+zdat
+z_eb_nmr03 <-as.vector(t(zdat[1,]))
+z_eb_nmr04 <-as.vector(t(zdat[2,]))
+head(z_eb_nmr03)
+lag_z_eb_nmr03<- lag.listw(listw, z_eb_nmr03 , zero.policy=TRUE)
+
+z_eb<-data.frame(z_eb_nmr03,lag_z_eb_nmr03, z_eb_nmr04)
+z_eb
+(modeli[[1]]$phi)
+phi10 <-  (modeli[[1]]$phi)[1,1]
+phi11 <-(modeli[[1]]$phi)[1,2]
+
+z_eb<-z_eb %>% 
+  mutate(pred_z_eb_nmr04= (z_eb_nmr03*phi10)+(lag_z_eb_nmr03*phi11)) %>% 
+  mutate(residual= z_eb_nmr04- pred_z_eb_nmr04)
+```
+
+
+
+# the first last column in z_eb is the same as the second row in the residuals dataframe
+
+```{r}
+z_eb
+(data.frame(modeli[[1]]$residuals))
+```
+
+
+the real error of this forecasting the RMSE is  sqrt(4.8)
+
+```{r}
+resi <- (data.frame(modeli[[1]]$residuals))
+resi<- resi[-1,]
+mean(as.matrix((resi*sd)^2))
+```
+
+
+
+# however this is an h=1 forecast what if we need to use those coefficients for a h=4 forecast?
+
+z2014 & zlag2014 -> pred(z2015 & zlag2015) ->  pred(z2016 & zlag2016) -> pred(z2017 & zlag2017) -> pred(2018)
+
+
+```{r}
+zdat
+z_eb_nmr14 <-as.vector(t(zdat[12,]))
+z_eb_nmr18 <-as.vector(t(zdat[16,]))
+lag_z_eb_nmr14<- lag.listw(listw, z_eb_nmr14 , zero.policy=TRUE)
+pred14_18<-data.frame(z_eb_nmr18, z_eb_nmr14, lag_z_eb_nmr14) %>% 
+   mutate(pred_z_eb_nmr15= (z_eb_nmr14*phi10)+(lag_z_eb_nmr14*phi11)) %>% 
+   mutate(pred_lag_z_eb_nmr15=  lag.listw(listw, pred_z_eb_nmr15 , zero.policy=TRUE)) %>% 
+  mutate(pred_z_eb_nmr16= (pred_z_eb_nmr15*phi10)+(pred_lag_z_eb_nmr15*phi11)) %>% 
+  mutate(pred_lag_z_eb_nmr16=  lag.listw(listw, pred_z_eb_nmr16 , zero.policy=TRUE)) %>%  
+   mutate(pred_z_eb_nmr17= (pred_z_eb_nmr16*phi10)+(pred_lag_z_eb_nmr16*phi11)) %>% 
+  mutate(pred_lag_z_eb_nmr17=  lag.listw(listw, pred_z_eb_nmr17 , zero.policy=TRUE)) %>%  
+    mutate(pred_z_eb_nmr18= (pred_z_eb_nmr17*phi10)+(pred_lag_z_eb_nmr17*phi11)) 
+pred14_18 <- pred14_18%>% 
+  mutate(residual=sd*(z_eb_nmr18-pred_z_eb_nmr18))
+pred14_18
+mean((pred14_18$residual)^2)
+
+```
+
+
+the rmse for this forecastin is sqrt(8.822683) which means that this forecast is not as powerful as the conventional arima model sqrt(7.800933)
+
+
+time series cross validation for h=4
+
+```{r}
+dat[c(1:5),]
+```
+
+```{r}
+dati=list()
+zdati=list()
+for (i in 5:12) {
+  dati[[i]]<-dat[c(1:i),]
+  zdati[[i]]<- stcenter(dati[[i]])
+}
+dati[[5]]
+zdati[[4]]
+```
+
+```{r}
+zdati[[2]]
+```
+
+
+
+```{r}
+loglikl=matrix(0,nrow = 4, ncol = 12)
+bicr=matrix(0,nrow = 4, ncol = 12)
+modeli=list()
+for (j in 5:12) {
+  
+
+for (i in 1:4) {
+ar<- i
+ma<- 0
+model <- starma(zdati[[j]], klist, ar, ma, iterate=0)
+loglikl[i,j]<- model$loglik
+bicr[i,j]<- model$bic
+#modeli[[i]]<- model
+#summary(model)
+}
+}
+```
+
+
+```{r}
+loglikl
+bicr
+```
+
+the best model for all dataset zdati is ar=1 
+
+```{r}
+modeli=list()
+best_ar=rep(1,12)
+for (j in 5:12) {
+ar<- best_ar[j]
+ma<- 0
+model <- starma(zdati[[j]], klist, ar, ma, iterate=0)
+modeli[[j]]<- model
+#summary(model)
+}
+```
+
+
+
+```{r}
+sdi=c()
+meani=c()
+for (j in 5:12) {
+  mean<- sum(dati[[j]]) / (nrow(dati[[j]]) * ncol(dati[[j]]))
+  sdi[j]<- sqrt( sum((dati[[j]]-mean)^2) / (nrow(dati[[j]]) * ncol(dati[[j]]) - 1)) 
+  meani[j]<-mean
+}
+```
+
+"in" = "i+n"
+```{r}
+jj=12
+dat[jj+4,]
+```
+
+
+```{r}
+residual_tot=rep(1,1120)
+for (jj in 5:12) {
+#modeli[[2]]$phi
+phi10 <-  (modeli[[jj]]$phi)[1,1]
+phi11 <-(modeli[[jj]]$phi)[1,2]
+
+z_eb_nmri <-as.vector(t(zdati[[jj]][2,]))
+eb_nmri4 <-as.vector(t(dat[jj+4,]))
+lag_z_eb_nmri<- lag.listw(listw, z_eb_nmri , zero.policy=TRUE)
+predi_i4<-data.frame(eb_nmri4, z_eb_nmri, lag_z_eb_nmri) %>% 
+   mutate(pred_z_eb_nmri1= (z_eb_nmri*phi10)+(lag_z_eb_nmri*phi11)) %>% 
+   mutate(pred_lag_z_eb_nmri1=  lag.listw(listw, pred_z_eb_nmri1 , zero.policy=TRUE)) %>% 
+  mutate(pred_z_eb_nmri2= (pred_z_eb_nmri1*phi10)+(pred_lag_z_eb_nmri1*phi11)) %>% 
+  mutate(pred_lag_z_eb_nmri2=  lag.listw(listw, pred_z_eb_nmri2 , zero.policy=TRUE)) %>%  
+   mutate(pred_z_eb_nmri3= (pred_z_eb_nmri2*phi10)+(pred_lag_z_eb_nmri2*phi11)) %>% 
+  mutate(pred_lag_z_eb_nmri3=  lag.listw(listw, pred_z_eb_nmri3 , zero.policy=TRUE)) %>%  
+    mutate(pred_z_eb_nmri4= (pred_z_eb_nmri3*phi10)+(pred_lag_z_eb_nmri3*phi11)) 
+predi_i4 <- predi_i4%>% 
+  mutate(residual=eb_nmri4-((pred_z_eb_nmri4*sdi[jj])+meani[jj]))
+residual_tot<- cbind(residual_tot, predi_i4$residual)
+}
+residual_tot<- as.data.frame(residual_tot^2)
+residual_tot<- residual_tot[,-1]
+```
+
+
+
+```{r}
+#cv
+#RMSE
+#error
+rmse<- as.data.frame(residual_tot)%>% 
+  summarise_all(sum)
+rmse
+
+rmse<-sqrt(rmse/1120)
+rmse
+#MAE
+
+mae_y <- sqrt(residual_tot)
+#mae_y
+mae_y<- mae_y%>% 
+  summarise_all(sum)
+mae_y<- mae_y/1120
+mae_y
+
+cvy
+cv_yearly<- rbind(mae_y, rmse)
+
+methodv=c("STAR (MAE)","STAR (RMSE)")
+names=seq(2011,2018,1)
+names= as.character(names)
+colnames(cv_yearly)<-names
+cv_yearly<- cv_yearly %>% 
+  mutate(method=methodv) %>% 
+  select(method, everything())
+cv_yearly
+cvy2<- rbind(cvy, cv_yearly)
+cvy2
+write.csv(cvy2,  "03-data/code04_timeseries_cv_yearly.csv")
+```
+
+the RMSE is  sqrt(8.37)
+this means that the spatial forecasting outperforms this model.
+
+```{r}
+residual_tot
+rmse=mean(as.matrix( residual_tot))
+rmse= sqrt(rmse)
+```
+
+
+
+```{r}
+ residual_tot
+mae<-mean(as.matrix(sqrt( residual_tot)))
+mae
+```
+
+```{r}
+cv<-rbind(cv, data.frame(method= c("STAR"), MAE= mae, RMSE=rmse))
+cv
+```
+
+```{r}
+write.csv(cv,  "03-data/code04_timeseries_cv.csv")
+```
+
+
+
+
+
+
+
+END
