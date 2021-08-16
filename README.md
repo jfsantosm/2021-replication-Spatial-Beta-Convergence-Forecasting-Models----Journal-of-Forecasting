@@ -2,7 +2,7 @@ RStudio: [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v
 DOI: https://doi.org/10.1002/for.2816
 DOI: 10.1002/for.2816
 
-Suggested citation: Felipe Santos-Marquez. (2021). Spatial Beta-Convergence Forecasting Models: Evidence from Municipal Homicide Rates in Colombia.
+Suggested citation: Santos-Marquez, F. (2021). Spatial Beta-Convergence Forecasting Models: Evidence from Municipal Homicide Rates in Colombia.
 Journal of Forecasting. https://doi.org/10.1002/for.2816. 
 
 This work is licensed under the Creative Commons Attribution-Share Alike 4.0 International License.
