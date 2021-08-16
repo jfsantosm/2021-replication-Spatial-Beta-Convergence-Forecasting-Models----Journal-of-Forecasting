@@ -24,7 +24,6 @@ output:
 ```{r setup}
 knitr::opts_chunk$set(warning = FALSE, message = FALSE)
 library(devtools)
-library(ExPanDaR)
 library(knitr)
 library(tidyverse)
 library(modelr)

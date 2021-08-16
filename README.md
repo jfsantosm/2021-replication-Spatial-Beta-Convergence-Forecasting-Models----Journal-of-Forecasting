@@ -1,8 +1,9 @@
-RStudio: [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/jfsantosm/2021a-crime-ccts-colombia/HEAD?urlpath=rstudio)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.4590069.svg)](https://doi.org/10.5281/zenodo.4590069)
+RStudio: [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/jfsantosm/2021-replication-Spatial-Beta-Convergence-Forecasting-Models----Journal-of-Forecasting/HEAD?urlpath=rstudio)
+DOI: https://doi.org/10.1002/for.2816
+DOI: 10.1002/for.2816
 
 Suggested citation: Felipe Santos-Marquez. (2021). Spatial Beta-Convergence Forecasting Models: Evidence from Municipal Homicide Rates in Colombia.
-Journal of Forecasting.
+Journal of Forecasting. https://doi.org/10.1002/for.2816. 
 
 This work is licensed under the Creative Commons Attribution-Share Alike 4.0 International License.
 
@@ -28,8 +29,7 @@ The paper concludes with some policy implications in terms of spatial effects an
 
 ## Replication
 
-In order to replicate the main tables of the article tables 1 and 2, run the Rmd files in the order from a to g 
-
+In order to replicate the main tables of the article tables 1 and 2, run the Rmd files in the order from a to g.
 
 
 ## sessionInfo()

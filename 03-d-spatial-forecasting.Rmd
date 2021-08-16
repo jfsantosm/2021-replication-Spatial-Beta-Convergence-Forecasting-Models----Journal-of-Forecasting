@@ -27,7 +27,6 @@ library(stargazer)
 library(skimr)
 library(spatialreg) #
 library(forecast)
-library(summarytools)
 # Change the presentation of decimal numbers to 4 and avoid scientific notation
 options(prompt="R> ", digits=5, scipen=999)
 ```
