@@ -10,7 +10,7 @@ This work is licensed under the Creative Commons Attribution-Share Alike 4.0 Int
 [![Creative Commons Lizenzvertrag](https://i.creativecommons.org/l/by-sa/4.0/88x31.png)](http://creativecommons.org/licenses/by-sa/4.0/)
 
 
-This repository contains a tutorial to replicate the results of the published paper
+This repository contains all the code and data to replicate the results of the published paper
 
 ## Spatial Beta-Convergence Forecasting Models: Evidence from Municipal Homicide Rates in Colombia
 
