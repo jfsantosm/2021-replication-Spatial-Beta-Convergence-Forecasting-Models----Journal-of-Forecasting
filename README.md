@@ -14,7 +14,7 @@ This repository contains all the code and data to replicate the results of the p
 
 ## Spatial Beta-Convergence Forecasting Models: Evidence from Municipal Homicide Rates in Colombia
 
-The forecasting power of different methods is tested utilising crime data for 1120 inland municipalities in Colombia.
+The forecasting power of different methods is tested utilizing crime data for 1120 inland municipalities in Colombia.
 Using data from 2003 to 2018, five different forecasting methods are used: ETS, ARIMA, STAR, a classical beta convergence based model and a spatial beta convergence model.
 First, it is shown that overall municipal crime disparities are steadily decreasing over time.
 This indicates that convergence and spatial effects are pivotal for the study of the dynamics of crime in Colombian municipalities.
@@ -25,7 +25,7 @@ The paper concludes with some policy implications in terms of spatial effects an
 
 ## How to replicate the results of the paper
 
-There are three (or more) options, they are presented in the order of how simple it is to implement the replication. the last option (binder button or online envornment) sometimes takes a few minutes (even an hour) to load, depending if the virtual computer has to be created from scratch.
+There are three (or more) options, they are presented in the order of how simple it is to implement the replication. the last option (binder button or online environment) sometimes takes a few minutes (even an hour) to load, depending if the virtual computer has to be created from scratch.
 
 - Go directly to Rsudiocloud and run the project on the cloud https://rstudio.cloud/project/2773965
 - Go to [Rstudiocloud](https://rstudio.cloud/) and use the GitHub option when creating the project and the link of this repository which is public
