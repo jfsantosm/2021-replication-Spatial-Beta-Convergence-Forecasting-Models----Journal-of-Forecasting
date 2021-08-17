@@ -25,11 +25,11 @@ The paper concludes with some policy implications in terms of spatial effects an
 
 ## How to replicate the results of the paper
 
-There are three (or more) options:
+There are three (or more) options, they are presented in the order of how simple it is to implement the replication. the last option (binder button or online envornment) sometimes takes a few minutes (even an hour) to load, depending if the virtual computer has to be created from scratch.
 
-- Download all this code as a zip file and run it locally on Rstudio (take a look at the essionInfo() section below)
 - Go directly to Rsudiocloud and run the project on the cloud https://rstudio.cloud/project/2773965
 - Go to [Rstudiocloud](https://rstudio.cloud/) and use the GitHub option when creating the project and the link of this repository which is public
+- Download all this code as a zip file and run it locally on Rstudio (take a look at the essionInfo() section below)
 - Click on the binder button on the top left of this Readme file or follow the simple instruction in the "Online Environment" section of this readme file (just below) 
 
 ## Online Environments
