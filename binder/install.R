@@ -48,5 +48,7 @@ install.packages("viridis", repos = "https://cloud.r-project.org/", dependencies
 install.packages("wbstats", repos = "https://cloud.r-project.org/", dependencies=TRUE)
 install.packages("xts", repos = "https://cloud.r-project.org/", dependencies=TRUE)
 install.packages("forecast", repos = "https://cloud.r-project.org/", dependencies=TRUE)
+install.packages("RCurl", repos = "https://cloud.r-project.org/", dependencies=TRUE)
+install.packages("summarytools", repos = "https://cloud.r-project.org/", dependencies=TRUE)
 
 #install.packages("ggstatsplot", repos = "https://cloud.r-project.org/", dependencies=TRUE)
