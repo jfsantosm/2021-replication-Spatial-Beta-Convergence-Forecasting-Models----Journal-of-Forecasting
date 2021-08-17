@@ -50,5 +50,8 @@ install.packages("xts", repos = "https://cloud.r-project.org/", dependencies=TRU
 install.packages("forecast", repos = "https://cloud.r-project.org/", dependencies=TRUE)
 install.packages("RCurl", repos = "https://cloud.r-project.org/", dependencies=TRUE)
 install.packages("summarytools", repos = "https://cloud.r-project.org/", dependencies=TRUE)
+install.packages("starma", repos = "https://cloud.r-project.org/", dependencies=TRUE)
+install.packages("ggpubr", repos = "https://cloud.r-project.org/", dependencies=TRUE)
+
 
 #install.packages("ggstatsplot", repos = "https://cloud.r-project.org/", dependencies=TRUE)

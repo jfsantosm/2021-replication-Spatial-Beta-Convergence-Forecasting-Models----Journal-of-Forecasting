@@ -32,8 +32,8 @@ library(data.table)
 library(readxl)
 
 #Install and load older versions of the following packages
-#remove.packages("REAT")
-#install_version("REAT", version = "2.1.1", repos = "http://cran.us.r-project.org")
+remove.packages("REAT")
+install_version("REAT", version = "2.1.1", repos = "http://cran.us.r-project.org")
 library(REAT)
 library(forecast)
 

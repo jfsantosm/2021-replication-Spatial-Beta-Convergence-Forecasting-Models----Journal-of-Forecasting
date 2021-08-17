@@ -38,7 +38,7 @@ There are three (or more) options:
 
 ## Replication
 
-In order to replicate the main tables of the article tables 1 and 2, run the Rmd files in the order from a to g.
+In order to replicate the main tables of the article tables 1 and 2, run the Rmd files in the order from a to e.
 
 
 ## sessionInfo()
