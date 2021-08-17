@@ -29,7 +29,7 @@ There are three (or more) options:
 
 - Download all this code as a zip file and run it locally on Rstudio (take a look at the essionInfo() section below)
 - Go directly to Rsudiocloud and run the project on the cloud https://rstudio.cloud/project/2773965
-- Go to Rstudio cloud and use the GitHub option when creating the project and the link of this repository which is public
+- Go to [Rstudiocloud](https://rstudio.cloud/) and use the GitHub option when creating the project and the link of this repository which is public
 - Click on the binder button on the top left of this Readme file or follow the simple instruction in the "Online Environment" section of this readme file (just below) 
 
 ## Online Environments
