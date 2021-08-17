@@ -23,6 +23,15 @@ It is found that the STAR and the beta models have the lowest root mean squared 
 Therefore, as time goes by, space appears to play a more important role in the evolution of homicide rates.
 The paper concludes with some policy implications in terms of spatial effects and the mitigation of crime.
 
+## How to replicate the results of the paper
+
+There are three (or more) options:
+
+- Download all this code as a zip file and run it locally on Rstudio
+- Go directly to Rsudiocloud and run the project on the cloud https://rstudio.cloud/project/2773965
+- Go to Rstudio cloud and use the GitHub option when creating the project and the link of this repository which is public
+- Click on the binder button on the top left of this Readme file or follow the simple instruction in the "Online Environment" section of this readme file (just below) 
+
 ## Online Environments
 
 - This notebook can also be executed online at [GESIS Notebooks](https://notebooks.gesis.org). Just copy the URL of this repository and paste it on the [BINDER form](https://notebooks.gesis.org/binder/) To open a virtual R Studio session, make sure you change you click on `File` and change it to `URL`. Then, write `rstudio` in the field `URL to open (optional)`. Finally, click on `launch`. 
